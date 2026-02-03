@@ -1,0 +1,2 @@
+[console_scripts]
+prompt-utils = prompt_utils_app.main:main
