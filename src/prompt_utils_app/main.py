@@ -1,10 +1,19 @@
 from __future__ import annotations
 
+import os
 import sys
 from pathlib import Path
 from typing import List
 import traceback
 
+if sys.platform.startswith("win"):
+    try:
+        import ctypes
+        ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("prompt-utils.app")
+    except Exception:
+        pass
+
+from PySide6.QtGui import QIcon
 from PySide6.QtCore import Qt, QObject, QThread, Signal
 from PySide6.QtWidgets import QApplication, QCheckBox, QFileDialog, QHBoxLayout, QLabel, QListWidget, QListWidgetItem, QMainWindow, QMessageBox, QPushButton, QSpinBox, QSplitter, QTextEdit, QVBoxLayout, QWidget
 
@@ -240,7 +249,12 @@ class MainWindow(QMainWindow):
 
 def main() -> None:
     app = QApplication(sys.argv)
+
+    icon_path = Path(__file__).resolve().parents[2] / "assets" / "icon.ico"
+    app.setWindowIcon(QIcon(str(icon_path)))
+
     w = MainWindow()
+    w.setWindowIcon(QIcon(str(icon_path)))
     w.show()
     sys.exit(app.exec())
 
