@@ -6,13 +6,6 @@ from pathlib import Path
 from typing import List
 import traceback
 
-if sys.platform.startswith("win"):
-    try:
-        import ctypes
-        ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("prompt-utils.app")
-    except Exception:
-        pass
-
 from PySide6.QtGui import QIcon
 from PySide6.QtCore import Qt, QObject, QThread, Signal
 from PySide6.QtWidgets import QApplication, QCheckBox, QFileDialog, QHBoxLayout, QLabel, QListWidget, QListWidgetItem, QMainWindow, QMessageBox, QPushButton, QSpinBox, QSplitter, QTextEdit, QVBoxLayout, QWidget
