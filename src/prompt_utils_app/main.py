@@ -11,6 +11,7 @@ from PySide6.QtCore import Qt, QObject, QThread, Signal
 from PySide6.QtWidgets import QApplication, QCheckBox, QFileDialog, QHBoxLayout, QLabel, QListWidget, QListWidgetItem, QMainWindow, QMessageBox, QPushButton, QSpinBox, QSplitter, QTextEdit, QVBoxLayout, QWidget
 
 from prompt_utils_core import BundleOptions, build_bundle, AppConfig, load_config, save_config
+from prompt_utils_core.defaults import FILETYPE_CHOICES
 
 
 class BundleWorker(QObject):
@@ -68,6 +69,29 @@ class MainWindow(QMainWindow):
         self.chk_gitignore = QCheckBox("Respect .gitignore (if found)")
         self.chk_gitignore.setChecked(self.cfg.respect_gitignore)
 
+        self.chk_filter_ext = QCheckBox("Filter by file extension")
+        self.chk_filter_ext.setChecked(self.cfg.filter_by_extension)
+
+        self.ext_list = QListWidget()
+        self.ext_list.setMaximumHeight(170)
+        # TODO clean comments from here
+        # Populate checkable items
+        selected = {e.lower() for e in self.cfg.selected_extensions}
+        for ext, label in FILETYPE_CHOICES:
+            item = QListWidgetItem(f"{label} ({ext})")
+            item.setFlags(item.flags() | Qt.ItemIsUserCheckable)
+            item.setCheckState(Qt.Checked if ext.lower() in selected else Qt.Unchecked)
+            # store the extension on the item
+            item.setData(Qt.UserRole, ext)
+            self.ext_list.addItem(item)
+
+        # enable/disable list based on checkbox
+        self.ext_list.setEnabled(self.chk_filter_ext.isChecked())
+
+        # If the user toggles/filter changes, rebuild preview
+        self.chk_filter_ext.toggled.connect(self._on_filter_changed)
+        self.ext_list.itemChanged.connect(self._on_filter_changed)
+
         self.max_bytes = QSpinBox()
         self.max_bytes.setRange(1_000, 10_000_000)
         self.max_bytes.setSingleStep(50_000)
@@ -100,6 +124,9 @@ class MainWindow(QMainWindow):
         left_layout.addWidget(self.chk_contents)
         left_layout.addWidget(self.chk_default_ignores)
         left_layout.addWidget(self.chk_gitignore)
+        left_layout.addWidget(self.chk_filter_ext)
+
+        left_layout.addWidget(self.ext_list)
 
         row3 = QHBoxLayout()
         row3.addWidget(QLabel("Limit"))
@@ -155,6 +182,20 @@ class MainWindow(QMainWindow):
         self._worker = None
         self._build_thread = None
 
+    def _selected_extensions(self) -> tuple[str, ...]:
+        if not self.chk_filter_ext.isChecked():
+            return ()
+        exts: list[str] = []
+        for i in range(self.ext_list.count()):
+            item = self.ext_list.item(i)
+            if item.checkState() == Qt.Checked:
+                exts.append(str(item.data(Qt.UserRole)))
+        return tuple(exts)
+
+    def _on_filter_changed(self, *args) -> None:
+        self.ext_list.setEnabled(self.chk_filter_ext.isChecked())
+        self.refresh_preview()
+
     def add_files(self) -> None:
         files, _ = QFileDialog.getOpenFileNames(self, "Select files")
         if not files:
@@ -198,7 +239,8 @@ class MainWindow(QMainWindow):
             include_tree=self.chk_tree.isChecked(),
             include_file_contents=self.chk_contents.isChecked(),
             use_default_ignores=self.chk_default_ignores.isChecked(),
-            respect_gitignore=self.chk_gitignore.isChecked()
+            respect_gitignore=self.chk_gitignore.isChecked(),
+            include_extensions=self._selected_extensions(),
         )
         
         selected_copy = list(self.selected)
@@ -236,6 +278,8 @@ class MainWindow(QMainWindow):
         self.cfg.max_file_bytes = int(self.max_bytes.value())
         self.cfg.use_default_ignores = self.chk_default_ignores.isChecked()
         self.cfg.respect_gitignore = self.chk_gitignore.isChecked()
+        self.cfg.filter_by_extension = self.chk_filter_ext.isChecked()
+        self.cfg.selected_extensions = list(self._selected_extensions())
         save_config(self.cfg)
         super().closeEvent(event)
 

@@ -17,7 +17,9 @@ class BundleOptions:
 
     use_default_ignores: bool = True
     respect_gitignore: bool = True
-    extra_ignore_patterns: tuple[str, ...] = ()
+    extra_ignore_patterns: Tuple[str, ...] = ()
+
+    include_extensions: Tuple[str, ...] = ()  # empty --> include all
 
 
 def _looks_binary(sample: bytes) -> bool:
@@ -83,7 +85,7 @@ def _gather_files(selected: Iterable[Path], options: BundleOptions | None = None
     for p in selected_list:
         try:
             if p.is_file():
-                if not _is_ignored(p, ignore_root, spec):
+                if _ext_allowed(p, options) and not _is_ignored(p, ignore_root, spec):
                     out.append(p)
                 continue
 
@@ -101,7 +103,7 @@ def _gather_files(selected: Iterable[Path], options: BundleOptions | None = None
 
                     for fn in filenames:
                         fpath = dpath / fn
-                        if fpath.is_file() and not _is_ignored(fpath, ignore_root, spec):
+                        if fpath.is_file() and _ext_allowed(fpath, options) and not _is_ignored(fpath, ignore_root, spec):
                             out.append(fpath)
 
         except OSError:
@@ -187,6 +189,17 @@ def _build_ignore_spec(selected: List[Path], options: BundleOptions) -> Tuple[Pa
     
     spec = PathSpec.from_lines("gitignore", patterns)
     return ignore_root, spec
+
+
+def _ext_allowed(path: Path, options: BundleOptions | None) -> bool:
+    if options is None:
+        return True
+    allowed = options.include_extensions
+    if not allowed:
+        return True
+
+    ext = path.suffix.lower()
+    return ext in {e.lower() for e in allowed}
 
 
 def _is_ignored(path: Path, ignore_root: Path | None, spec: PathSpec | None) -> bool:

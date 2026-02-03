@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 from dataclasses import asdict, dataclass
 from pathlib import Path
+from typing import List
 
 from platformdirs import user_config_dir
 
@@ -14,6 +15,13 @@ class AppConfig:
     max_file_bytes: int = 200_000
     use_default_ignores: bool = True
     respect_gitignore: bool = True
+
+    filter_by_extension: bool = False
+    selected_extensions: List[str] | None = None
+
+    def __post_init__(self) -> None:
+        if self.selected_extensions is None:
+            self.selected_extensions = []
 
 
 def config_path() -> Path:

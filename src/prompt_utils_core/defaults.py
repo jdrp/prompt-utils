@@ -45,3 +45,25 @@ DEFAULT_IGNORE_PATTERNS: tuple[str, ...] = (
     "*.pyo",
     "*.pyd",
 )
+
+# Extensions to show in the UI
+FILETYPE_CHOICES: tuple[tuple[str, str], ...] = (
+    (".py", "Python"),
+    (".js", "JavaScript"),
+    (".ts", "TypeScript"),
+    (".tsx", "TSX"),
+    (".jsx", "JSX"),
+    (".rs", "Rust"),
+    (".sh", "Shell"),
+    (".zsh", "Zsh"),
+    (".json", "JSON"),
+    (".toml", "TOML"),
+    (".yml", "YAML (.yml)"),
+    (".yaml", "YAML (.yaml)"),
+    (".md", "Markdown"),
+    (".txt", "Text"),
+    (".html", "HTML"),
+    (".css", "CSS"),
+    (".xml", "XML"),
+    (".ini", "INI"),
+)
