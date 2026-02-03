@@ -8,7 +8,7 @@ import traceback
 from PySide6.QtCore import Qt, QObject, QThread, Signal
 from PySide6.QtWidgets import QApplication, QCheckBox, QFileDialog, QHBoxLayout, QLabel, QListWidget, QListWidgetItem, QMainWindow, QMessageBox, QPushButton, QSpinBox, QSplitter, QTextEdit, QVBoxLayout, QWidget
 
-from prompt_utils_core import BundleOptions, build_bundle
+from prompt_utils_core import BundleOptions, build_bundle, AppConfig, load_config, save_config
 
 
 class BundleWorker(QObject):
@@ -31,6 +31,8 @@ class BundleWorker(QObject):
 class MainWindow(QMainWindow):
     def __init__(self) -> None:
         super().__init__()
+        self.cfg: AppConfig = load_config()
+
         self.setWindowTitle("Prompt Utils")
         self.resize(1100, 700)
 
@@ -53,15 +55,21 @@ class MainWindow(QMainWindow):
 
         # Options
         self.chk_tree = QCheckBox("Include tree summary")
-        self.chk_tree.setChecked(True)
+        self.chk_tree.setChecked(self.cfg.include_tree)
 
         self.chk_contents = QCheckBox("Include file contents")
-        self.chk_contents.setChecked(True)
+        self.chk_contents.setChecked(self.cfg.include_file_contents)
+
+        self.chk_default_ignores = QCheckBox("Use default ignores")
+        self.chk_default_ignores.setChecked(self.cfg.use_default_ignores)
+
+        self.chk_gitignore = QCheckBox("Respect .gitignore (if found)")
+        self.chk_gitignore.setChecked(self.cfg.respect_gitignore)
 
         self.max_bytes = QSpinBox()
         self.max_bytes.setRange(1_000, 10_000_000)
         self.max_bytes.setSingleStep(50_000)
-        self.max_bytes.setValue(200_000)
+        self.max_bytes.setValue(int(self.cfg.max_file_bytes))
         self.max_bytes.setSuffix(" bytes max/file")
 
         btn_refresh = QPushButton("Build preview")
@@ -88,6 +96,8 @@ class MainWindow(QMainWindow):
         left_layout.addWidget(QLabel("Options"))
         left_layout.addWidget(self.chk_tree)
         left_layout.addWidget(self.chk_contents)
+        left_layout.addWidget(self.chk_default_ignores)
+        left_layout.addWidget(self.chk_gitignore)
 
         row3 = QHBoxLayout()
         row3.addWidget(QLabel("Limit"))
@@ -184,7 +194,9 @@ class MainWindow(QMainWindow):
         options = BundleOptions(
             max_file_bytes=int(self.max_bytes.value()),
             include_tree=self.chk_tree.isChecked(),
-            include_file_contents=self.chk_contents.isChecked()
+            include_file_contents=self.chk_contents.isChecked(),
+            use_default_ignores=self.chk_default_ignores.isChecked(),
+            respect_gitignore=self.chk_gitignore.isChecked()
         )
         
         selected_copy = list(self.selected)
@@ -214,6 +226,16 @@ class MainWindow(QMainWindow):
             return
         QApplication.clipboard().setText(self.preview_text)
         QMessageBox.information(self, "Copied", "Bundle copied to clipboard.")
+
+    def closeEvent(self, event) -> None:
+        """ On close, persists user settings """
+        self.cfg.include_tree = self.chk_tree.isChecked()
+        self.cfg.include_file_contents = self.chk_contents.isChecked()
+        self.cfg.max_file_bytes = int(self.max_bytes.value())
+        self.cfg.use_default_ignores = self.chk_default_ignores.isChecked()
+        self.cfg.respect_gitignore = self.chk_gitignore.isChecked()
+        save_config(self.cfg)
+        super().closeEvent(event)
 
 
 def main() -> None:

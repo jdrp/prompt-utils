@@ -4,6 +4,9 @@ import os
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterable, List, Optional, Tuple
+from pathspec import PathSpec
+
+from prompt_utils_core.defaults import DEFAULT_IGNORE_PATTERNS, LANG_BY_EXT
 
 
 @dataclass(frozen=True)
@@ -11,6 +14,10 @@ class BundleOptions:
     max_file_bytes: int = 200_000
     include_tree: bool = True
     include_file_contents: bool = True
+
+    use_default_ignores: bool = True
+    respect_gitignore: bool = True
+    extra_ignore_patterns: tuple[str, ...] = ()
 
 
 def _looks_binary(sample: bytes) -> bool:
@@ -31,27 +38,7 @@ def _looks_binary(sample: bytes) -> bool:
 
 def _guess_lang(path: Path) -> str:
     """ Returns the correct language annotation for each file type """
-    ext = path.suffix.lower()
-    return {
-        ".py": "python",
-        ".js": "javascript",
-        ".ts": "typescript",
-        ".tsx": "tsx",
-        ".jsx": "jsx",
-        ".json": "json",
-        ".md": "markdown",
-        ".toml": "toml",
-        ".yml": "yaml",
-        ".yaml": "yaml",
-        ".rs": "rust",
-        ".sh": "bash",
-        ".zsh": "zsh",
-        ".txt": "text",
-        ".html": "html",
-        ".css": "css",
-        ".xml": "xml",
-        ".ini": "ini"
-    }.get(ext, "")
+    return LANG_BY_EXT.get(path.suffix.lower(), "")
 
 
 def _read_text_file(path: Path, max_bytes: int) -> Tuple[Optional[str], Optional[str]]:
@@ -85,17 +72,38 @@ def _read_text_file(path: Path, max_bytes: int) -> Tuple[Optional[str], Optional
     return data.decode("utf-8", errors="replace"), None
 
 
-def _gather_files(selected: Iterable[Path]) -> List[Path]:
+def _gather_files(selected: Iterable[Path], options: BundleOptions | None = None) -> List[Path]:
     """ Gets recursive list of directories, sorted and without duplicates """
+    selected_list = list(selected)
+    ignore_root, spec = (None, None)
+    if options is not None:
+        ignore_root, spec = _build_ignore_spec(selected_list, options)
+
     out: List[Path] = []
-    for p in selected:
+    for p in selected_list:
         try:
+            if p.is_file():
+                if not _is_ignored(p, ignore_root, spec):
+                    out.append(p)
+                continue
+
             if p.is_dir():
-                for f in p.rglob("*"):  # TODO handle symlinks (maybe add a toggle)
-                    if f.is_file():
-                        out.append(f)
-            elif p.is_file():
-                out.append(p)
+                for dirpath, dirnames, filenames in os.walk(p, topdown=True, followlinks=False):
+                    dpath = Path(dirpath)
+
+                    # prune ignored subdirectories
+                    kept_dirs: list[str] = []
+                    for dn in dirnames:
+                        candidate = dpath / dn
+                        if not _is_ignored(candidate, ignore_root, spec):
+                            kept_dirs.append(dn)
+                    dirnames[:] = kept_dirs
+
+                    for fn in filenames:
+                        fpath = dpath / fn
+                        if fpath.is_file() and not _is_ignored(fpath, ignore_root, spec):
+                            out.append(fpath)
+
         except OSError:
             # TODO handle permission issues
             continue
@@ -121,6 +129,77 @@ def _common_root(files: List[Path]) -> str:
         return os.path.commonpath(dirs)
     except ValueError:
         return ""
+    
+
+def _find_repo_root(start: Path) -> Path | None:
+    """ Looks for closest parent with a .git directory """
+    cur = start if start.is_dir() else start.parent
+    for _ in range(30):
+        if (cur / ".git").exists():
+            return cur
+        if cur.parent == cur:
+            break
+        cur = cur.parent
+    return None
+
+
+def _load_gitignore_patterns(repo_root: Path) -> List[str]:
+    """ Reads .gitignore if it exists """
+    p = repo_root / ".gitignore"
+    if not p.exists():
+        return []
+    lines: list[str] = []
+    for raw in p.read_text(encoding="utf-8", errors="replace").splitlines():
+        s = raw.strip()
+        if not s or s.startswith("#"):
+            continue
+        lines.append(s)
+    return lines
+
+
+def _build_ignore_spec(selected: List[Path], options: BundleOptions) -> Tuple[Path | None, PathSpec | None]:
+    """ Returns (ignore_root, spec). Matching is based on ignore_rood, and only applies if spec is not None """
+    patterns: list[str] = []
+
+    if options.use_default_ignores:
+        patterns.extend(DEFAULT_IGNORE_PATTERNS)
+
+    if options.extra_ignore_patterns:
+        patterns.extend(options.extra_ignore_patterns)
+
+    ignore_root: Path | None = None
+
+    if options.respect_gitignore:
+        for p in selected:
+            rr = _find_repo_root(p)
+            if rr is not None:
+                ignore_root = rr
+                patterns.extend(_load_gitignore_patterns(rr))
+                break
+
+    if ignore_root is None:
+        gathered = _gather_files(selected)
+        root_str = _common_root(gathered)
+        ignore_root = Path(root_str) if root_str else None
+
+    if not patterns:
+        return ignore_root, None
+    
+    spec = PathSpec.from_lines("gitignore", patterns)
+    return ignore_root, spec
+
+
+def _is_ignored(path: Path, ignore_root: Path | None, spec: PathSpec | None) -> bool:
+    if spec is None or ignore_root is None:
+        return False
+    
+    try:
+        rel = path.resolve(strict=False).relative_to(ignore_root.resolve(strict=False))
+        rel_str = rel.as_posix()
+    except Exception:
+        rel_str = path.as_posix()
+
+    return spec.match_file(rel_str)
     
 
 def _tree_lines(files: List[Path], root: str) -> List[str]:
@@ -150,7 +229,7 @@ def _tree_lines(files: List[Path], root: str) -> List[str]:
         items = list(node.items())
         for i, (name, child) in enumerate(items):
             is_last = i == len(items) - 1
-            branch = "└──" if is_last else "├── "
+            branch = "└── " if is_last else "├── "
             lines.append(prefix + branch + str(name))
             if isinstance(child, dict):
                 extension = "    " if is_last else "│   "
@@ -161,7 +240,7 @@ def _tree_lines(files: List[Path], root: str) -> List[str]:
 
 
 def build_bundle(selected_paths: Iterable[Path], options: BundleOptions) -> str:
-    files = _gather_files(selected_paths)
+    files = _gather_files(selected_paths, options)
     root = _common_root(files)
 
     parts: List[str] = []
