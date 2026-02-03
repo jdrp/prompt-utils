@@ -1,0 +1,38 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "prompt-utils"
+version = "0.1.0"
+description = "Desktop utililty to bundle selected files/directories into AI-friendly clipboard format."
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "PySide6==6.10.2",
+    "pathspec==1.0.4",
+    "Jinja2==3.1.6",
+    "platformdirs==4.5.1",
+]
+
+[project.optional-dependencies]
+dev = [
+    "ruff==0.14.14",
+    "pytest==9.0.2"
+]
+
+[project.scripts]
+prompt-utils = "prompt_utils_app.main:main"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
