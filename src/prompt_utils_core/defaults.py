@@ -54,6 +54,7 @@ FILETYPE_CHOICES: tuple[tuple[str, str], ...] = (
     (".tsx", "TSX"),
     (".jsx", "JSX"),
     (".rs", "Rust"),
+    (".java", "Java"),
     (".sh", "Shell"),
     (".zsh", "Zsh"),
     (".json", "JSON"),
