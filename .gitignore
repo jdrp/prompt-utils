@@ -20,6 +20,7 @@ dist/
 .DS_Store
 .vscode/
 .idea/
+.VSCodeCounter/
 
 # Qt/PySide (optional logs)
 *.log

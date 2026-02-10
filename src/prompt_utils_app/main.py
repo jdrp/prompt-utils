@@ -2,22 +2,23 @@ from __future__ import annotations
 
 import sys
 from pathlib import Path
-from typing import List
 import traceback
 
 from PySide6.QtGui import QIcon
 from PySide6.QtCore import Qt, QObject, QThread, Signal
-from PySide6.QtWidgets import QApplication, QCheckBox, QFileDialog, QHBoxLayout, QLabel, QListWidget, QListWidgetItem, QMainWindow, QMessageBox, QPushButton, QSpinBox, QSplitter, QTextEdit, QVBoxLayout, QWidget
+from PySide6.QtWidgets import QApplication, QCheckBox, QFileDialog, QHBoxLayout, QLabel, QListWidget, QListWidgetItem, QMainWindow, QMessageBox, QPushButton, QSpinBox, QSplitter, QTextEdit, QTreeWidget, QVBoxLayout, QWidget
 
 from prompt_utils_core import BundleOptions, build_bundle, AppConfig, load_config, save_config
 from prompt_utils_core.defaults import FILETYPE_CHOICES
+from prompt_utils_core.ignore_utils import build_ignore_spec, is_file_ignored
+from .file_tree import FileTreeWidget, ReturnListIncludes
 
 
-class BundleWorker(QObject):
+class BundleWorker(QObject):  # TODO move to bundler.py
     finished = Signal(str)
     failed = Signal(str)
 
-    def __init__(self, selected: List[Path], options: BundleOptions) -> None:
+    def __init__(self, selected: list[Path], options: BundleOptions) -> None:
         super().__init__()
         self.selected = selected
         self.options = options
@@ -29,6 +30,7 @@ class BundleWorker(QObject):
         except Exception:
             self.failed.emit(traceback.format_exc())
 
+# TODO apply FileTreeWidget changes
 
 class MainWindow(QMainWindow):
     def __init__(self) -> None:
@@ -38,12 +40,13 @@ class MainWindow(QMainWindow):
         self.setWindowTitle("Prompt Utils")
         self.resize(1100, 700)
 
-        self.selected: List[Path] = []
+        self.selected: list[Path] = []
         self.preview_text: str = ""
 
         # Left: selection list + controls
-        self.list_widget = QListWidget()
-        self.list_widget.setSelectionMode(QListWidget.ExtendedSelection)
+        self.tree_widget = FileTreeWidget()
+        self.tree_widget.setSelectionMode(QTreeWidget.ExtendedSelection)
+        self.tree_widget.itemChanged.connect(self.refresh_preview)
 
         btn_add_files = QPushButton("Add files…")
         btn_add_dir = QPushButton("Add directory…")
@@ -74,7 +77,7 @@ class MainWindow(QMainWindow):
         self.ext_list = QListWidget()
         self.ext_list.setMaximumHeight(170)
         # TODO clean comments from here
-        # Populate checkable items
+        # populate extencion list
         selected = {e.lower() for e in self.cfg.selected_extensions}
         for ext, label in FILETYPE_CHOICES:
             item = QListWidgetItem(f"{label} ({ext})")
@@ -87,9 +90,13 @@ class MainWindow(QMainWindow):
         # enable/disable list based on checkbox
         self.ext_list.setEnabled(self.chk_filter_ext.isChecked())
 
-        # If the user toggles/filter changes, rebuild preview
+        # If the user toggles/filter changes, update preview
+        self.chk_default_ignores.toggled.connect(self._update_ignore_logic)
+        self.chk_gitignore.toggled.connect(self._update_ignore_logic)
         self.chk_filter_ext.toggled.connect(self._on_filter_changed)
         self.ext_list.itemChanged.connect(self._on_filter_changed)
+        self.chk_tree.toggled.connect(self.refresh_preview)
+        self.chk_contents.toggled.connect(self.refresh_preview)
 
         self.max_bytes = QSpinBox()
         self.max_bytes.setRange(1_000, 10_000_000)
@@ -105,7 +112,7 @@ class MainWindow(QMainWindow):
         left = QWidget()
         left_layout = QVBoxLayout(left)
         left_layout.addWidget(QLabel("Selected paths"))
-        left_layout.addWidget(self.list_widget)
+        left_layout.addWidget(self.tree_widget)
 
         row1 = QHBoxLayout()
         row1.addWidget(btn_add_files)
@@ -151,19 +158,10 @@ class MainWindow(QMainWindow):
         splitter.setStretchFactor(0, 0)
         splitter.setStretchFactor(1, 1)
 
-        root = QWidget()
-        root_layout = QVBoxLayout(root)
-        root_layout.addWidget(splitter)
+        self.setCentralWidget(splitter)
 
-        self.setCentralWidget(root)
-
+        self._update_ignore_logic()
         self.refresh_preview()
-
-    def _sync_list(self) -> None:  # TODO rewrite to provide a tree-like checklist
-        self.list_widget.clear()
-        for p in self.selected:
-            item = QListWidgetItem(str(p))
-            self.list_widget.addItem(item)
 
     def _on_build_finished(self, text: str) -> None:
         self.preview_text = text
@@ -195,61 +193,75 @@ class MainWindow(QMainWindow):
         self.ext_list.setEnabled(self.chk_filter_ext.isChecked())
         self.refresh_preview()
 
+    def _update_ignore_logic(self, *args) -> None:
+        """
+        Constructs a checker function based on current roots and checkboxes,
+        then pushes it to the tree.
+        """
+        use_defaults = self.chk_default_ignores.isChecked()
+        respect_gitignore = self.chk_gitignore.isChecked()
+
+        cache: dict[Path, bool] = {}
+
+        def checker(path: Path) -> bool:
+            if path in cache: 
+                return cache[path] 
+            root, spec = build_ignore_spec([path], use_defaults, respect_gitignore)  # TODO stop calling build_ignore_spec for every file (probably inefficient)
+            res = is_file_ignored(path, root, spec)
+            cache[path] = res
+            return res
+        
+        self.tree_widget.set_ignore_checker(checker)
+        self.tree_widget.refresh_ignore_state()
+        self.refresh_preview()
+
     def add_files(self) -> None:
         files, _ = QFileDialog.getOpenFileNames(self, "Select files")
         if not files:
             return
         for f in files:
-            self.selected.append(Path(f))
-        self.selected = sorted(set(self.selected), key=lambda x: str(x).lower())
-        self._sync_list()
+            self.tree_widget.add_path(Path(f))
         self.refresh_preview()
 
     def add_directory(self) -> None:
+        # TODO convert to add_directories (also change the button)
         d = QFileDialog.getExistingDirectory(self, "Select a directory")
         if not d:
             return
-        self.selected.append(Path(d))
-        self.selected = sorted(set(self.selected), key=lambda x: str(x).lower())
-        self._sync_list()
+        self.tree_widget.add_path(Path(d))
         self.refresh_preview()
 
     def remove_selected(self) -> None:
-        rows = sorted({i.row() for i in self.list_widget.selectedIndexes()}, reverse=True)
-        if not rows:
-            return
-        for r in rows:
-            del self.selected[r]
-        self._sync_list()
+        self.tree_widget.remove_selected_roots()
         self.refresh_preview()
 
     def clear_all(self) -> None:
-        self.selected = []
-        self._sync_list()
+        self.tree_widget.clear_all()
         self.refresh_preview()
 
     def refresh_preview(self) -> None:
         # prevent overlapping builds
         if getattr(self, "_build_thread", None) is not None:
             return
+        
+        files_to_bundle = self.tree_widget.get_checked_files(ReturnListIncludes.FILES_ONLY)
+        if not files_to_bundle:
+            self.preview.setPlainText("(No files selected)")
+            return
 
         options = BundleOptions(
             max_file_bytes=int(self.max_bytes.value()),
             include_tree=self.chk_tree.isChecked(),
             include_file_contents=self.chk_contents.isChecked(),
-            use_default_ignores=self.chk_default_ignores.isChecked(),
-            respect_gitignore=self.chk_gitignore.isChecked(),
             include_extensions=self._selected_extensions(),
         )
-        
-        selected_copy = list(self.selected)
 
         # update UI to show busy state
         self.preview.setPlainText("Building preview…")
         self.setEnabled(False)
 
         self._build_thread = QThread()
-        self._worker = BundleWorker(selected_copy, options)
+        self._worker = BundleWorker(files_to_bundle, options)
         self._worker.moveToThread(self._build_thread)
 
         self._build_thread.started.connect(self._worker.run)
