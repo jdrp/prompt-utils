@@ -11,7 +11,10 @@ def test_bundle_includes_tree_and_contents(tmp_path: Path) -> None:
     a.write_text("print('hi')\n", encoding="utf-8")
     b.write_text("hello\n", encoding="utf-8")
 
-    out = build_bundle([tmp_path], BundleOptions(max_file_bytes=200_000))
+    # The new bundler expects a flat list of files, it does not recurse.
+    files = [a, b]
+    
+    out = build_bundle(files, BundleOptions(max_file_bytes=200_000))
 
     assert "## Tree" in out
     assert "a.py" in out

@@ -3,13 +3,20 @@ from prompt_utils_core import BundleOptions, build_bundle
 
 
 def test_extension_filter_only_includes_selected(tmp_path: Path) -> None:
-    (tmp_path / "a.py").write_text("print('a')\n", encoding="utf-8")
-    (tmp_path / "b.js").write_text("console.log('b')\n", encoding="utf-8")
-    (tmp_path / "c.txt").write_text("nope\n", encoding="utf-8")
+    a = tmp_path / "a.py"
+    b = tmp_path / "b.js"
+    c = tmp_path / "c.txt"
+
+    a.write_text("print('a')\n", encoding="utf-8")
+    b.write_text("console.log('b')\n", encoding="utf-8")
+    c.write_text("nope\n", encoding="utf-8")
+
+    # Pass all files; the bundler is responsible for filtering by extension
+    files = [a, b, c]
 
     out = build_bundle(
-        [tmp_path],
-        BundleOptions(include_extensions=(".py", ".js"), use_default_ignores=False, respect_gitignore=False),
+        files,
+        BundleOptions(include_extensions=(".py", ".js")),
     )
 
     assert "### File: a.py" in out
