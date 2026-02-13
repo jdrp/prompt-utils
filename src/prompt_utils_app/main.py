@@ -6,7 +6,7 @@ import traceback
 
 from PySide6.QtGui import QIcon
 from PySide6.QtCore import Qt, QObject, QThread, Signal
-from PySide6.QtWidgets import QApplication, QCheckBox, QFileDialog, QHBoxLayout, QLabel, QListWidget, QListWidgetItem, QMainWindow, QMessageBox, QPushButton, QSpinBox, QSplitter, QTextEdit, QTreeWidget, QVBoxLayout, QWidget
+from PySide6.QtWidgets import QApplication, QCheckBox, QFileDialog, QHBoxLayout, QLabel, QListWidget, QListWidgetItem, QMainWindow, QPushButton, QSpinBox, QSplitter, QTextEdit, QTreeWidget, QVBoxLayout, QWidget
 
 from prompt_utils_core import BundleOptions, build_bundle, AppConfig, load_config, save_config
 from prompt_utils_core.defaults import FILETYPE_CHOICES
