@@ -246,6 +246,7 @@ class MainWindow(QMainWindow):
         
         files_to_bundle = self.tree_widget.get_checked_files(ReturnListIncludes.FILES_ONLY)
         if not files_to_bundle:
+            self.preview_text = ""
             self.preview.setPlainText("(No files selected)")
             return
 
@@ -277,10 +278,13 @@ class MainWindow(QMainWindow):
         
     def copy_to_clipboard(self) -> None:
         if not self.preview_text.strip():
-            QMessageBox.information(self, "Nothing to copy", "Preview is empty.")
+            print(self.preview_text)
+            # QMessageBox.information(self, "Nothing to copy", "Preview is empty.")
+            self.statusBar().showMessage("Nothing to copy. Preview is empty.", 3000)
             return
         QApplication.clipboard().setText(self.preview_text)
-        QMessageBox.information(self, "Copied", "Bundle copied to clipboard.")
+        self.statusBar().showMessage("Bundle copied to clipboard!", 3000)
+        # QMessageBox.information(self, "Copied", "Bundle copied to clipboard.")
 
     def closeEvent(self, event) -> None:
         """ On close, persists user settings """

@@ -161,7 +161,7 @@ class FileTreeWidget(QTreeWidget):
         try:
             state = item.checkState(column)
 
-            self._propagate_state_down(item, state)
+            self._propagate_state_down(item, state, activate_ignored_files=item.is_ignored)
 
             # propagate upwards
             parent = item.parent()
@@ -171,17 +171,17 @@ class FileTreeWidget(QTreeWidget):
         finally:
             self.blockSignals(False)
 
-    def _propagate_state_down(self, item: FileTreeItem, state: Qt.CheckState) -> None:
+    def _propagate_state_down(self, item: FileTreeItem, state: Qt.CheckState, *, activate_ignored_files: bool = False) -> None:
         """
         Apply state to children. 
         Logic:
         - If Unchecking: Uncheck everything.
-        - If Checking: Check normal items, keep ignored items Unchecked.
+        - If Checking: Check normal items, keep ignored items Unchecked (unless parent is ignored).
         """
         for i in range(item.childCount()):
             child = item.child(i)
             
-            if state == Qt.Checked and child.is_ignored:
+            if state == Qt.Checked and child.is_ignored and not activate_ignored_files:
                 pass
             else:
                 child.setCheckState(0, state)
